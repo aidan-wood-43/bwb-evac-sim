@@ -9,6 +9,7 @@ import itertools
 import pickle
 import copy
 import random
+import sys
 
 #cell 1
 ## Initialisation Functions
@@ -42,7 +43,7 @@ def initTestMaze():
     
     return a
 
-def initMaze(file='floorPlanA380.csv', horizontalFlag = False):
+def initMaze(file, horizontalFlag = False):
   
     a = genfromtxt(file, delimiter=',')
     
@@ -139,7 +140,7 @@ def initGraph(maze):
     return G, nodeMap, edgeMap
 
 #cell 4
-def initOccupancy(maze):
+def initOccupancy(a):
     # Initialise occupancy grid. Inidividuals spawned into all seat locations.
     # Individual IDs assigned on encounter
     
@@ -352,57 +353,7 @@ def updateGraph(source, a, occ, G, nodeMap, edgeMap):
     return G
 
 
-#cell 13
-## Initialise simulation
-
-
-
-#cell 14
-#filenames
-base = 'BWB_restricted_exit'
-if 'A380' in base:
-    horizontalFlag = True
-else:
-    horizontalFlag = False
-mazeFilename = base + '.csv'
-pklFile = base + '.pkl'
-floorplan = base + '.png'
-floorplanPop = base + '_with_pop.png'
-gifName = base + '.gif'
-
 #cell 15
-# Initialisation process can be longest part. Pickle setup for speed.
-pklFlag = False
-filename = pklFile
-
-if not pklFlag:
-    # Initialise MAZE
-    flag = True
-    if flag:
-        a =initMaze(mazeFilename, horizontalFlag) # global
-    else:
-        a = initTestMaze() # global
-
-    # Initialise GRAPH
-    G, nodeMap, edgeMap = initGraph(a) # global (NOTE: GRAPH object passed by REFERENCE by default)
-    # Hence okay not to pass G between functions as would be edited as if global anyway
-
-    # Initialise OCCUPANCY GRID
-    occ = initOccupancy(a)
-
-    # Initialise POPULATION
-    pop = initPopulation(G, occ)
-    
-    with open(filename, 'wb') as f: 
-        pickle.dump([a, G, occ, pop, nodeMap, edgeMap], f)
-
-else:
-    with open(filename, 'rb') as f:
-        a, G, occ, pop, nodeMap, edgeMap = pickle.load(f)
-        
-timestep = 1/2
-endFlag = False
-t = 0
 
 #cell 16
 ## Utilities
@@ -427,82 +378,127 @@ def draw_matrix(a, zoom, borders):
             draw.rectangle((j*zoom+r, i*zoom+r, j*zoom+zoom-r-1, i*zoom+zoom-r-1), fill=color)
     return im
 
-a = initMaze(mazeFilename, horizontalFlag) # global
-
-zoom = 20 # global
-borders = 6 # global
-im = draw_matrix(a, zoom, borders) # global
-
-im.save(floorplan,)
-
-#cell 18
 def drawPop(occ, im):
-    draw = ImageDraw.Draw(im)
-    zoom = 20
-    borders = 6
-    for i in range(len(occ)):
-        for j in range(len(occ[i])):
-            if occ[i,j] > 0:
-                r = borders
-                draw.ellipse((j * zoom + r, i * zoom + r, j * zoom + zoom - r - 1, i * zoom + zoom - r - 1),
-                               fill=(255,0,0))
-                
-    return im
+        draw = ImageDraw.Draw(im)
+        zoom = 20
+        borders = 6
+        for i in range(len(occ)):
+            for j in range(len(occ[i])):
+                if occ[i,j] > 0:
+                    r = borders
+                    draw.ellipse((j * zoom + r, i * zoom + r, j * zoom + zoom - r - 1, i * zoom + zoom - r - 1),
+                                fill=(255,0,0))
+                    
+        return im
 
-a = initMaze(mazeFilename, horizontalFlag) # global
+if __name__ == '__main__':
 
-zoom = 20 # global
-borders = 6 # global
-im = draw_matrix(a, zoom, borders) # global
-im = drawPop(occ, im)
+    #filenames
+    base = sys.argv[1]
+    if 'A380' in base:
+        horizontalFlag = True
+    else:
+        horizontalFlag = False
+    mazeFilename = base + '.csv'
+    pklFile = base + '.pkl'
+    floorplan = base + '.png'
+    floorplanPop = base + '_with_pop.png'
+    gifName = base + '.gif'
 
-im.save(floorplanPop,)
+    pklFlag = False
+    filename = pklFile
 
-#cell 19
-## Simulation
+    try:
+        flag = bool(sys.argv[2])
+    except IndexError:
+        flag = False
 
-#cell 20
+    if not pklFlag:
+        # Initialise MAZE
+        if flag:
+            a =initMaze(mazeFilename, horizontalFlag) # global
+        else:
+            a = initTestMaze() # global
 
-# Init gif
-baseIm = draw_matrix(a, 20, 6)
-images = []
+        # Initialise GRAPH
+        G, nodeMap, edgeMap = initGraph(a) # global (NOTE: GRAPH object passed by REFERENCE by default)
+        # Hence okay not to pass G between functions as would be edited as if global anyway
 
-while not endFlag:    
-    
-    # At start of each iteration noone has moved and everyone can move
-    for i in pop:
-        i['moved'] = False
-        i['canMove'] = True
-    
-    # Draw population
-    images.append(drawPop(occ, baseIm.copy()))
-    
-    # Loop until no population moves are possible (blocked or have moved)
-    while any([m['canMove'] for m in pop]):
+        # Initialise OCCUPANCY GRID
+        occ = initOccupancy(a)
+
+        # Initialise POPULATION
+        pop = initPopulation(G, occ)
         
-        for i, item in enumerate(pop):
-            
-            movedFlag = moveIndividual(a, G, occ, item, i, t, nodeMap, edgeMap)
-            
-            if movedFlag:
-                for m in pop:
-                    m['canMove'] = True
-                # break
-            
-        pop = [p for p in pop if p['escaped'] != True]      
-   
-    
-    images.append(drawPop(occ, baseIm.copy()))
-    print(f'Timestep: {t} \t Population: {len(pop)}')
-    t += timestep
-    
-    if len(pop) == 0:
-        endFlag = True
-    
-print(f"Time taken: {t} seconds")
+        with open(filename, 'wb') as f: 
+            pickle.dump([a, G, occ, pop, nodeMap, edgeMap], f)
 
-images[0].save(gifName,
-               save_all=True, append_images=images[1:],
-               optimize=False, duration=333, loop=0)
+    else:
+        with open(filename, 'rb') as f:
+            a, G, occ, pop, nodeMap, edgeMap = pickle.load(f)
+        
+    timestep = 1/2
+    endFlag = False
+    t = 0
+
+    zoom = 20 # global
+    borders = 6 # global
+    im = draw_matrix(a, zoom, borders) # global
+
+    im.save(floorplan,)
+
+    zoom = 20 # global
+    borders = 6 # global
+    im = draw_matrix(a, zoom, borders) # global
+    im = drawPop(occ, im)
+
+    im.save(floorplanPop,)
+
+    #cell 19
+    ## Simulation
+
+    #cell 20
+
+    # Init gif
+    baseIm = draw_matrix(a, 20, 6)
+    images = []
+
+    while not endFlag:    
+        
+        # At start of each iteration noone has moved and everyone can move
+        for i in pop:
+            i['moved'] = False
+            i['canMove'] = True
+        
+        # Draw population
+        images.append(drawPop(occ, baseIm.copy()))
+        
+        # Loop until no population moves are possible (blocked or have moved)
+        while any([m['canMove'] for m in pop]):
+            
+            for i, item in enumerate(pop):
+                
+                movedFlag = moveIndividual(a, G, occ, item, i, t, nodeMap, edgeMap)
+                
+                if movedFlag:
+                    for m in pop:
+                        m['canMove'] = True
+                    # break
+                
+            pop = [p for p in pop if p['escaped'] != True]      
+    
+        
+        images.append(drawPop(occ, baseIm.copy()))
+        print(f'Timestep: {t} \t Population: {len(pop)}')
+        t += timestep
+        
+        if len(pop) == 0:
+            endFlag = True
+        
+    print(f"Time taken: {t} seconds")
+
+    images[0].save(gifName,
+                save_all=True, append_images=images[1:],
+                optimize=False, duration=333, loop=0)
 
 
