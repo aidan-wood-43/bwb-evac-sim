@@ -1,19 +1,15 @@
 #cell 0
 from PIL import Image, ImageDraw
 import networkx as nx
+import matplotlib.pyplot as plt
 import numpy as np
+from ast import literal_eval as make_tuple
 from numpy import genfromtxt
 import itertools
 import pickle
+import copy
 import random
 import sys
-
-# Objects required
-
-# map object
-# passenger object
-# graph object
-# simulation engine object
 
 #cell 1
 ## Initialisation Functions
@@ -30,146 +26,118 @@ import sys
     3: Impasse
     4: Exit    
 '''
-
-'''
-    The sim class has three main components:
-     1) Aircraft floorplan - to define init state
-     2) Graph network - to calculate occupant paths
-     3) Occupancy map - to track occupants current position
-
-     
-'''
-class Floorplan:
     
-    def init_example_floorplan():
-        '''Generate example floorplan'''
-        return np.array([
-            [1, 1, 1, 1, 1, 1, 1, 1, 1],
-            [4 ,0, 0, 0, 0, 0, 0, 0, 1],
-            [4 ,0, 0, 0, 0, 2, 2, 2, 1],
-            [1, 2, 2, 2, 0, 3, 3, 3, 1],
-            [1, 0, 0, 0, 0, 3, 3, 3, 1],
-            [1, 2, 2, 2, 0, 3, 3, 3, 1],
-            [1, 0, 0, 0, 0, 0, 0, 0, 1],
-            [1, 2, 2, 2, 0, 2, 2, 2, 1],
-            [1, 1, 1, 1, 1, 1, 1, 1, 1],
-        ])
+def initTestMaze():
 
-    def init_floorplan(floorplan_file, rotate = False):
-        '''
-        Create floorplan (numpy array) from the supplied file.
-        Rotate will rotate the supplied floorplan by 90deg, so that the left side becomes the top.
-        '''
-        if rotate:
-            return genfromtxt(floorplan_file, delimiter=',')
-        else:
-            return np.transpose(genfromtxt(floorplan_file, delimiter=','))
+    a = np.array([
+        [1, 1, 1, 1, 1, 1, 1, 1, 1],
+        [4 ,0, 0, 0, 0, 0, 0, 0, 1],
+        [4 ,0, 0, 0, 0, 2, 2, 2, 1],
+        [1, 2, 2, 2, 0, 3, 3, 3, 1],
+        [1, 0, 0, 0, 0, 3, 3, 3, 1],
+        [1, 2, 2, 2, 0, 3, 3, 3, 1],
+        [1, 0, 0, 0, 0, 0, 0, 0, 1],
+        [1, 2, 2, 2, 0, 2, 2, 2, 1],
+        [1, 1, 1, 1, 1, 1, 1, 1, 1],
+    ])
+    
+    return a
 
-class Graph:
-    '''
-    Class for the graph network which defines the connections between discrete positions.
+def initMaze(file, horizontalFlag = False):
+  
+    a = genfromtxt(file, delimiter=',')
+    
+    if horizontalFlag:
+        return np.transpose(a)
+    else:
+        return a
+    
 
-    '''
-
-    # map reflecting the floorplan schema given above. Used to map floorplan int values to actual element names
-    node_map = {0: "Path",
+#cell 3
+# Create graph network from 'maze'
+def initGraph(maze):
+    # Node type dict
+    nodeMap = {0: "Path",
                1: "Wall",
                2: "Seating",
                3: "Impasse",
                4: "Exit"}
-
-    # Types of floorplan elements
-    node_types = ['Path','Wall','Seating','Impasse','Exit']
     
-    # Subset of floorplan elements which occupants cannot pass through.
+    # Define edge logic
+    types = ['Path','Wall','Seating','Impasse','Exit']
+    edgeMap = {}
+
     barriers = ["Wall", "Impasse"]
 
-    def __init__(self, floorplan):    
-        
-        self.movement_difficulty_map = self.init_movement_difficulty_map()
-        self.graph = self.init_graph_network(floorplan)
+    for d in ['up','side','down']:
+        edgeMap[d] = {}
+        for ty in types:
+            edgeMap[d][ty] = {}
+            for t in types:
+                if (ty in barriers) or (t in barriers):
+                    val = 1000000
+                else:
+                    val = 1      
+                edgeMap[d][ty][t] = val
 
-    def init_movement_difficulty_map(self):
+    # Path edge cases
+    edgeMap['up']['Path']['Seating'] = 100
+    edgeMap['side']['Path']['Seating'] = 5
+    edgeMap['down']['Path']['Seating'] = 3
 
-        # Mapping of the movement difficulty for each direction and florrplan element
-        movement_difficulty = {}
+    # Exit edge cases
+    edgeMap['up']['Exit']['Seating'] = 100
+    edgeMap['side']['Exit']['Seating'] = 5
+    edgeMap['down']['Exit']['Seating'] = 3
 
-        # Create movement difficulty map - this should be in a config file
-        for direction in ['up','side','down']:
-            movement_difficulty[direction] = {}
-            for type in self.node_types:
-                movement_difficulty[direction][type] = {}
-                for t in self.node_types:
-                    if (type or t) in self.barriers:
-                        movement_difficulty[direction][type][t] = 1000000
-                    else:
-                        movement_difficulty[direction][type][t] = 1
-        
-        # Path edge cases
-        movement_difficulty['up']['Path']['Seating'] = 100
-        movement_difficulty['side']['Path']['Seating'] = 5
-        movement_difficulty['down']['Path']['Seating'] = 3
+    # Seating edge cases
+    edgeMap['up']['Seating']['Path'] = 2
+    edgeMap['side']['Seating']['Path'] = 5
+    edgeMap['down']['Seating']['Path'] = 100
 
-        # Exit edge cases
-        movement_difficulty['up']['Exit']['Seating'] = 100
-        movement_difficulty['side']['Exit']['Seating'] = 5
-        movement_difficulty['down']['Exit']['Seating'] = 3
+    edgeMap['up']['Seating']['Exit'] = 2
+    edgeMap['side']['Seating']['Exit'] = 5
+    edgeMap['down']['Seating']['Exit'] = 100
 
-        # Seating edge cases
-        movement_difficulty['up']['Seating']['Path'] = 2
-        movement_difficulty['side']['Seating']['Path'] = 5
-        movement_difficulty['down']['Seating']['Path'] = 100
-
-        movement_difficulty['up']['Seating']['Exit'] = 2
-        movement_difficulty['side']['Seating']['Exit'] = 5
-        movement_difficulty['down']['Seating']['Exit'] = 100
-
-        movement_difficulty['up']['Seating']['Seating'] = 100
-        movement_difficulty['side']['Seating']['Seating'] = 5
-        movement_difficulty['down']['Seating']['Seating'] = 100
-
-        return movement_difficulty
-
-    def init_graph_network(self, floorplan):
-        G = nx.Graph()
-        for i in range(len(floorplan)):
-            for j in range(len(floorplan[i])):
-                k = (i,j)
-                G.add_node(k, type = nodeMap[floorplan[i][j]], pos = (j,len(floorplan)-i))
-        
-        for i in range(len(floorplan)):
-            for j in range(len(floorplan[i])):
-                k = (i,j)
-                sourceType = G.nodes[k]['type']
-                # Assign upwards edge
-                if i > 0:
-                    l = (i-1,j)
-                    targetType = G.nodes[l]['type']
-                    w =  edgeMap['up'][sourceType][targetType] # Edge weight
-                    G.add_edge(k,l,weight = w)
-                # Assign right edge
-                if j < (len(a[i])-2):
-                    l = (i,j+1)
-                    targetType = G.nodes[l]['type']
-                    w =  edgeMap['side'][sourceType][targetType] # Edge weight
-                    G.add_edge(k,l,weight = w)
-                # Assign left edge
-                if j > 0:
-                    l = (i,j-1)
-                    targetType = G.nodes[l]['type']
-                    w =  edgeMap['side'][sourceType][targetType] # Edge weight
-                    G.add_edge(k,l,weight = w)
-                # Assign downwards edge
-                if i < (len(a)-2):
-                    l = (i+1,j)
-                    targetType = G.nodes[l]['type']
-                    w =  edgeMap['down'][sourceType][targetType] # Edge weight
-                    G.add_edge(k,l,weight = w)
-        return G
-
-class Occupancy():
-
-    def init
+    edgeMap['up']['Seating']['Seating'] = 100
+    edgeMap['side']['Seating']['Seating'] = 5
+    edgeMap['down']['Seating']['Seating'] = 100
+    
+    G = nx.Graph()
+    for i in range(len(maze)):
+        for j in range(len(maze[i])):
+            k = (i,j)
+            G.add_node(k, type = nodeMap[maze[i][j]], pos = (j,len(maze)-i))
+    
+    for i in range(len(maze)):
+        for j in range(len(maze[i])):
+            k = (i,j)
+            sourceType = G.nodes[k]['type']
+            # Assign upwards edge
+            if i > 0:
+                l = (i-1,j)
+                targetType = G.nodes[l]['type']
+                w =  edgeMap['up'][sourceType][targetType] # Edge weight
+                G.add_edge(k,l,weight = w)
+            # Assign right edge
+            if j < (len(a[i])-2):
+                l = (i,j+1)
+                targetType = G.nodes[l]['type']
+                w =  edgeMap['side'][sourceType][targetType] # Edge weight
+                G.add_edge(k,l,weight = w)
+            # Assign left edge
+            if j > 0:
+                l = (i,j-1)
+                targetType = G.nodes[l]['type']
+                w =  edgeMap['side'][sourceType][targetType] # Edge weight
+                G.add_edge(k,l,weight = w)
+            # Assign downwards edge
+            if i < (len(a)-2):
+                l = (i+1,j)
+                targetType = G.nodes[l]['type']
+                w =  edgeMap['down'][sourceType][targetType] # Edge weight
+                G.add_edge(k,l,weight = w)
+    return G, nodeMap, edgeMap
 
 #cell 4
 def initOccupancy(a):
